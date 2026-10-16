@@ -3,9 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#080b14">
+  <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NeonArcade">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="NEON ARCADE">
+  <meta name="description" content="15 мініігор в одному офлайн-додатку.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjM2IiBmaWxsPSIjMGYxNzJhIi8+PHRleHQgeD0iOTYiIHk9IjEyMCIgZm9udC1zaXplPSI5NiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IlNlZ29lIFVJLCBzYW5zLXNlcmlmIiBmaWxsPSIjMDBmMGZmIj7imIU8L3RleHQ+PC9zdmc+">
   <title>NEON ARCADE HUB — 15 ігор</title>
   <style>
     * {
@@ -21,7 +27,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #080b14;
+      background: #0f172a;
       font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
       color: #e0e8f0;
       touch-action: none;
@@ -61,7 +67,6 @@
       transform: scale(1);
     }
 
-    /* ============ HUB MENU ============ */
     #hubScreen {
       overflow-y: auto;
       overflow-x: hidden;
@@ -266,7 +271,6 @@
       font-weight: 800;
     }
 
-    /* ============ GAME CONTAINER ============ */
     #gameScreen {
       background: #080b14;
     }
@@ -484,7 +488,6 @@
       color: #ffffff;
     }
 
-    /* ============ OVERLAY ============ */
     .overlay {
       position: absolute;
       top: 0;
@@ -585,7 +588,6 @@
       justify-content: center;
     }
 
-    /* ============ LOADING ============ */
     #loadingScreen {
       position: fixed;
       inset: 0;
@@ -593,7 +595,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      background: #080b14;
+      background: #0f172a;
       z-index: 9999;
       gap: 24px;
       transition: opacity 0.5s ease;
@@ -633,7 +635,6 @@
       50% { opacity: 1; }
     }
 
-    /* ============ TOAST ============ */
     #toast {
       position: fixed;
       bottom: 90px;
@@ -662,7 +663,6 @@
       transform: translateX(-50%) translateY(0);
     }
 
-    /* ============ RESPONSIVE ============ */
     @media (max-height: 500px) and (orientation: landscape) {
       .dpad {
         width: min(130px, 30vh);
@@ -720,6 +720,28 @@
         padding: 6px 10px 30px;
       }
     }
+
+    .offline-indicator {
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      z-index: 10000;
+      background: rgba(255, 64, 96, 0.9);
+      color: #fff;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .offline-indicator.show {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -728,8 +750,9 @@
     <div class="loader-text">Завантаження...</div>
   </div>
 
+  <div class="offline-indicator" id="offlineIndicator">Офлайн</div>
+
   <div id="app">
-    <!-- ============ HUB SCREEN ============ -->
     <div class="screen visible" id="hubScreen">
       <div class="hub-header">
         <div class="hub-title">Neon Arcade Hub</div>
@@ -743,7 +766,6 @@
       <div class="games-grid" id="gamesGrid"></div>
     </div>
 
-    <!-- ============ GAME SCREEN ============ -->
     <div class="screen hidden" id="gameScreen">
       <div class="game-topbar">
         <div class="game-topbar-left">
@@ -790,6 +812,47 @@
       'use strict';
 
       /* ======================================================================
+         SERVICE WORKER REGISTRATION
+         ====================================================================== */
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('./sw.js')
+            .then(function(registration) {
+              console.log('[App] Service Worker зареєстровано:', registration.scope);
+              registration.addEventListener('updatefound', function() {
+                var newWorker = registration.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', function() {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[App] Доступне оновлення. Перезавантажте сторінку.');
+                    }
+                  });
+                }
+              });
+            })
+            .catch(function(err) {
+              console.warn('[App] Помилка реєстрації Service Worker:', err);
+            });
+        });
+      }
+
+      /* ======================================================================
+         OFFLINE INDICATOR
+         ====================================================================== */
+      function updateOfflineIndicator() {
+        var indicator = document.getElementById('offlineIndicator');
+        if (!indicator) return;
+        if (navigator.onLine) {
+          indicator.classList.remove('show');
+        } else {
+          indicator.classList.add('show');
+        }
+      }
+      window.addEventListener('online', updateOfflineIndicator);
+      window.addEventListener('offline', updateOfflineIndicator);
+      updateOfflineIndicator();
+
+      /* ======================================================================
          UTILITIES
          ====================================================================== */
       const $ = (sel) => document.querySelector(sel);
@@ -809,7 +872,7 @@
       }
 
       /* ======================================================================
-         AUDIO ENGINE (Web Audio API)
+         AUDIO ENGINE
          ====================================================================== */
       const AudioEngine = {
         ctx: null,
@@ -921,7 +984,7 @@
       };
 
       /* ======================================================================
-         STORAGE (localStorage)
+         STORAGE
          ====================================================================== */
       const Storage = {
         PREFIX: 'neonArcadeHub_',
@@ -968,7 +1031,7 @@
       };
 
       /* ======================================================================
-         GAME REGISTRY (15 GAMES)
+         GAME REGISTRY
          ====================================================================== */
       const GAMES = [
         { id: 'diamond_hunter', name: 'Diamond Hunter', icon: '💎', accent: '#00f0ff', desc: 'Лабіринт: алмази, ключі, пастки' },
@@ -1177,7 +1240,7 @@
       };
 
       /* ======================================================================
-         GAME MANAGER (Base + lifecycle)
+         GAME MANAGER
          ====================================================================== */
       const GameManager = {
         current: null,
@@ -1335,7 +1398,6 @@
         const COLS = 15;
         const ROWS = 13;
         const TILE = 40;
-
         const CELL = { WALL: 1, FLOOR: 0 };
 
         const LEVELS = [
@@ -2036,7 +2098,6 @@
         let enemies = [];
         let particles = [];
         let stars = [];
-        let powerups = [];
         let boss = null;
         let wave = 1;
         let score = 0;
@@ -2045,10 +2106,9 @@
         let gameOver = false;
         let win = false;
         let keys = {};
-        let touchActive = false;
-        let touchX = 0, touchY = 0;
         let moveX = 0, moveY = 0;
         let shootHeld = false;
+        let playerLives = 3;
 
         for (let i = 0; i < 120; i++) {
           stars.push({
@@ -2128,7 +2188,6 @@
           bullets = [];
           enemies = [];
           particles = [];
-          powerups = [];
           boss = null;
           wave = 1;
           score = 0;
@@ -2136,6 +2195,7 @@
           bossTimer = 0;
           gameOver = false;
           win = false;
+          playerLives = 3;
           updateHUD();
           UI.hideGameOverlay();
         }
@@ -2557,8 +2617,6 @@
             }
           }
         };
-
-        let playerLives = 3;
       };
 
       /* ======================================================================
@@ -2587,8 +2645,6 @@
         let waveActive = false;
         let gameOver = false;
         let win = false;
-        let mouseX = 0, mouseY = 0;
-        let touchActive = false;
 
         const TOWER_TYPES = {
           basic: { cost: 30, range: 2.2, dmg: 8, rate: 0.7, color: '#40c0ff', name: 'Стрілець' },
@@ -3476,7 +3532,7 @@
       };
 
       /* ======================================================================
-         GAME 5: LASER BOUNCE (Physics Puzzle)
+         GAME 5: LASER BOUNCE
          ====================================================================== */
       GameFactory.laser_bounce = function(canvas, ctx) {
         const W = canvas.width;
@@ -3697,7 +3753,6 @@
               if (selectedMirror) {
                 selectedMirror.angle = (selectedMirror.angle + 45) % 360;
                 AudioEngine.click();
-                checkSolvedState();
               }
             });
             bar.appendChild(rotBtn);
@@ -3750,9 +3805,8 @@
                   selectedMirror.y = clamp(pos.y - dragOffsetY, 30, H - 30);
                 }
               };
-              const onEnd = (e) => {
+              const onEnd = () => {
                 dragging = false;
-                checkSolvedState();
               };
               canvas.addEventListener('touchstart', onStart, { passive: false });
               canvas.addEventListener('touchmove', onMove, { passive: false });
@@ -3761,22 +3815,6 @@
               canvas.addEventListener('mousemove', onMove);
               canvas.addEventListener('mouseup', onEnd);
               this._touchHandlers = { onStart, onMove, onEnd };
-            }
-
-            function checkSolvedState() {
-              if (checkSolved() && !solved) {
-                solved = true;
-                score += 200 + level * 50;
-                Storage.setHighScore('laser_bounce', score);
-                updateHUD();
-                UI.showGameOverlay(
-                  'РОЗВ\'ЯЗАНО!',
-                  'Ти спрямував лазер на ціль!',
-                  'НАСТУПНИЙ РІВЕНЬ',
-                  'Очки: <span>' + formatNumber(score) + '</span>'
-                );
-                AudioEngine.success();
-              }
             }
           },
 
@@ -3936,7 +3974,6 @@
         let spawnTimer = 0;
         let gameOver = false;
         let started = false;
-        let keys = {};
         let touchJump = false;
         let jumpPressed = false;
 
@@ -4242,8 +4279,6 @@
         let moveDelay = 0.14;
         let gameOver = false;
         let particles = [];
-        let keys = {};
-        let touchDir = null;
 
         function reset() {
           snake = [
@@ -4261,7 +4296,6 @@
           moveDelay = 0.14;
           gameOver = false;
           particles = [];
-          touchDir = null;
           spawnFood();
           spawnFood();
           spawnPortals();
@@ -4429,7 +4463,6 @@
                   else if (d === 'down' && dir.y !== -1) nextDir = { x: 0, y: 1 };
                   else if (d === 'left' && dir.x !== 1) nextDir = { x: -1, y: 0 };
                   else if (d === 'right' && dir.x !== -1) nextDir = { x: 1, y: 0 };
-                  touchDir = d;
                 };
                 btn.addEventListener('touchstart', (e) => { e.preventDefault(); setDir(); btn.classList.add('active'); }, { passive: false });
                 btn.addEventListener('touchend', (e) => { e.preventDefault(); btn.classList.remove('active'); }, { passive: false });
@@ -4669,9 +4702,7 @@
         let grid = [];
         let score = 0;
         let selected = null;
-        let swapAnim = null;
         let particles = [];
-        let fallSpeed = 800;
         let moves = 30;
         let gameOver = false;
         let comboText = '';
@@ -4822,7 +4853,6 @@
           score = 0;
           moves = 30;
           selected = null;
-          swapAnim = null;
           particles = [];
           gameOver = false;
           comboText = '';
@@ -4857,7 +4887,6 @@
             AudioEngine.fail();
             return false;
           }
-          swapAnim = { a, b, t: 0 };
           moves--;
           updateHUD();
           AudioEngine.click();
@@ -4927,11 +4956,6 @@
                   gem.yOffset = lerp(gem.yOffset, 0, dt * 12);
                 }
               }
-            }
-
-            if (swapAnim) {
-              swapAnim.t += dt * 5;
-              if (swapAnim.t >= 1) swapAnim = null;
             }
 
             let changed = removeMatches();
@@ -5078,10 +5102,8 @@
 
         let grid = [];
         let score = 0;
-        let best = 0;
         let gameOver = false;
         let won = false;
-        let animating = false;
         let mergeEffects = [];
 
         const COLORS = {
@@ -5111,7 +5133,6 @@
           score = 0;
           gameOver = false;
           won = false;
-          animating = false;
           mergeEffects = [];
           addRandomTile();
           addRandomTile();
@@ -5147,7 +5168,7 @@
         }
 
         function move(dirX, dirY) {
-          if (animating || gameOver) return;
+          if (gameOver) return;
           let moved = false;
           const merged = [];
           for (let y = 0; y < SIZE; y++) {
@@ -5389,7 +5410,6 @@
         let balls = [];
         let bricks = [];
         let particles = [];
-        let powerups = [];
         let score = 0;
         let lives = 3;
         let gameOver = false;
@@ -5434,7 +5454,6 @@
           paddle = { x: W / 2, y: H - 40, w: PADDLE_W, h: PADDLE_H, vx: 0 };
           balls = [];
           particles = [];
-          powerups = [];
           score = 0;
           lives = 3;
           gameOver = false;
@@ -5744,7 +5763,7 @@
         const OFFX = (canvas.width - COLS * TILE) / 2;
         const OFFY = 70 + (canvas.height - 80 - ROWS * TILE) / 2;
 
-        const EMOJIS = ['🍎', '🍌', '🍇', '🍓', '🍒', '🍑', '🍊', '🍋', '🍉', '🍍', '🥝', '🍒', '🥥', '🍇', '🍎', '🍌'];
+        const EMOJIS = ['🍎', '🍌', '🍇', '🍓', '🍒', '🍑', '🍊', '🍋'];
 
         let cards = [];
         let firstCard = null;
@@ -6305,7 +6324,6 @@
         let gameOver = false;
         let particles = [];
         let win = false;
-        let animatingBalls = [];
 
         function createTubes() {
           tubes = [];
@@ -6354,7 +6372,6 @@
           gameOver = false;
           win = false;
           particles = [];
-          animatingBalls = [];
           UI.hideGameOverlay();
           updateHUD();
         }
@@ -7235,63 +7252,11 @@
       };
 
       /* ======================================================================
-         SERVICE WORKER (PWA)
-         ====================================================================== */
-      function registerServiceWorker() {
-        if (!('serviceWorker' in navigator)) return;
-
-        const swCode = [
-          'const CACHE_NAME = "neon-arcade-hub-v1";',
-          'const ASSETS = ["/", "/index.html"];',
-          'self.addEventListener("install", (event) => {',
-          '  event.waitUntil(',
-          '    caches.open(CACHE_NAME).then((cache) => {',
-          '      return cache.addAll(ASSETS);',
-          '    })',
-          '  );',
-          '  self.skipWaiting();',
-          '});',
-          'self.addEventListener("activate", (event) => {',
-          '  event.waitUntil(',
-          '    caches.keys().then((keys) => {',
-          '      return Promise.all(',
-          '        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))',
-          '      );',
-          '    })',
-          '  );',
-          '  self.clients.claim();',
-          '});',
-          'self.addEventListener("fetch", (event) => {',
-          '  event.respondWith(',
-          '    caches.match(event.request).then((response) => {',
-          '      return response || fetch(event.request);',
-          '    })',
-          '  );',
-          '});'
-        ].join('\n');
-
-        try {
-          const blob = new Blob([swCode], { type: 'application/javascript' });
-          const url = URL.createObjectURL(blob);
-          navigator.serviceWorker.register(url).then(() => {
-            console.log('Service Worker зареєстровано успішно');
-          }).catch((err) => {
-            console.log('Помилка реєстрації Service Worker:', err);
-          });
-        } catch (e) {
-          console.log('Service Worker не підтримується:', e);
-        }
-      }
-
-      /* ======================================================================
          INITIALIZATION
          ====================================================================== */
       function init() {
         AudioEngine.init();
-
         UI.init();
-
-        registerServiceWorker();
 
         window.addEventListener('resize', () => {
           if (GameManager.current) {
