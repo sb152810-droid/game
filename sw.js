@@ -1,52 +1,60 @@
-const CACHE_NAME = 'neon-arcade-hub-v1';
+/* =========================================================================
+   NEON ARCADE — Service Worker
+   Стратегія: Cache First, falling back to Network
+   ========================================================================= */
+
+const CACHE_NAME = 'neon-arcade-v1';
 const CACHE_VERSION = 1;
 
 const PRECACHE_ASSETS = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './sw.js'
 ];
 
+/* -------------------------------------------------------------------------
+   INSTALL — кешуємо всі базові ресурси
+   ------------------------------------------------------------------------- */
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install event, version:', CACHE_VERSION);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[SW] Pre-caching assets:', PRECACHE_ASSETS);
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => {
-        console.log('[SW] Pre-cache complete, skipping waiting');
         return self.skipWaiting();
       })
       .catch((err) => {
-        console.error('[SW] Pre-cache failed:', err);
+        console.warn('[SW] Precache failed:', err);
       })
   );
 });
 
+/* -------------------------------------------------------------------------
+   ACTIVATE — видаляємо старі кеші, беремо контроль над клієнтами
+   ------------------------------------------------------------------------- */
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate event');
   event.waitUntil(
     caches.keys()
-      .then((cacheNames) => {
+      .then((keys) => {
         return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              console.log('[SW] Deleting old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-            return null;
-          })
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => {
+              return caches.delete(key);
+            })
         );
       })
       .then(() => {
-        console.log('[SW] Claiming clients');
         return self.clients.claim();
       })
   );
 });
 
+/* -------------------------------------------------------------------------
+   FETCH — Cache First, fallback to Network
+   ------------------------------------------------------------------------- */
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
@@ -60,41 +68,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
-          return response;
-        })
-        .catch(() => {
-          return caches.match('./index.html').then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            return caches.match('./');
-          });
-        })
-    );
-    return;
-  }
-
   event.respondWith(
-    caches.match(request)
+    caches.match(request, { ignoreSearch: true })
       .then((cachedResponse) => {
         if (cachedResponse) {
-          fetch(request)
-            .then((networkResponse) => {
-              if (networkResponse && networkResponse.status === 200) {
-                caches.open(CACHE_NAME).then((cache) => {
-                  cache.put(request, networkResponse);
-                });
-              }
-            })
-            .catch(() => {});
           return cachedResponse;
         }
 
@@ -103,31 +80,31 @@ self.addEventListener('fetch', (event) => {
             if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
               return networkResponse;
             }
-            const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
+
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME)
+              .then((cache) => {
+                cache.put(request, responseToCache);
+              })
+              .catch(() => {});
+
             return networkResponse;
           })
-          .catch((err) => {
-            console.log('[SW] Fetch failed for:', request.url, err);
-            return new Response('Offline', {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: new Headers({ 'Content-Type': 'text/plain' })
-            });
+          .catch(() => {
+            if (request.mode === 'navigate') {
+              return caches.match('./index.html');
+            }
+            return new Response('', { status: 503, statusText: 'Offline' });
           });
       })
   );
 });
 
+/* -------------------------------------------------------------------------
+   MESSAGE — оновлення за запитом
+   ------------------------------------------------------------------------- */
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
-  }
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    caches.keys().then((names) => {
-      names.forEach((name) => caches.delete(name));
-    });
   }
 });
